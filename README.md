@@ -4,22 +4,52 @@
 
 ## 定位
 
-- 这是一个新的独立 CLI 工具。
+- 独立 CLI 工具。
 - 不读取邮件。
 - 不替代现有每周五产业链周报定时任务。
-- 第一版只输出本地 Markdown 文档。
+- 第一版输出本地 Markdown 文件。
+
+## 首次配置
+
+交互式配置 Wind Key、模型 provider、模型名、base_url 和模型 Key：
+
+```bash
+python3 -m chain_report.cli configure
+```
+
+非交互配置示例，适合定时任务部署：
+
+```bash
+python3 -m chain_report.cli configure \
+  --provider openai-compatible \
+  --model your-model-name \
+  --base-url https://your-openai-compatible-endpoint/v1 \
+  --wind-key YOUR_WIND_KEY \
+  --llm-key YOUR_MODEL_KEY \
+  --wind-node-bin /path/to/node \
+  --non-interactive
+```
+
+配置会保存到当前项目的 `.env`。`.env` 已在 `.gitignore` 中，不应提交到仓库。
+
+查看当前配置，Key 会脱敏：
+
+```bash
+python3 -m chain_report.cli config-show
+```
 
 ## 运行
 
+配置完成后，直接生成报告：
+
 ```bash
-cd chain-report-cli
-python3 -m chain_report.cli generate
+python3 -m chain_report.cli generate --non-interactive
 ```
 
-测试流程（不调用 Wind / 不调用真实模型）：
+测试流程，不调用 Wind、不调用真实模型：
 
 ```bash
-python3 -m chain_report.cli generate --sample-data --provider mock --non-interactive
+python3 -m chain_report.cli generate --sample-data --provider mock --non-interactive --no-save-keys
 ```
 
 输出位置：
@@ -28,10 +58,15 @@ python3 -m chain_report.cli generate --sample-data --provider mock --non-interac
 outputs/steel-weekly/YYYY-MM-DD/report.md
 ```
 
-## Key 管理
+## Key 和默认配置
 
 CLI 会优先读取当前目录 `.env` 或环境变量：
 
+- `CHAIN_REPORT_PROVIDER`
+- `CHAIN_REPORT_MODEL`
+- `CHAIN_REPORT_BASE_URL`
+- `CHAIN_REPORT_NODE_BIN`
+- `CHAIN_REPORT_WIND_MCP_DIR`
 - `WIND_API_KEY`
 - `OPENAI_API_KEY`
 - `DEEPSEEK_API_KEY`
@@ -39,7 +74,7 @@ CLI 会优先读取当前目录 `.env` 或环境变量：
 - `MINIMAX_API_KEY`
 - `OPENAI_COMPATIBLE_API_KEY`
 
-缺失时会在命令行里询问，并默认保存到 `.env`（权限 600）。如果不想保存：
+如果不想保存输入的 Key：
 
 ```bash
 python3 -m chain_report.cli generate --no-save-keys
@@ -55,12 +90,10 @@ python3 -m chain_report.cli generate --no-save-keys
 - `openai-compatible`
 - `ollama`
 
-## 设计借鉴
+## Windows 示例
 
-参考 TradingAgents 的 CLI 思路：
-
-- 交互式选择 provider / model
-- 环境变量和 `.env` 优先
-- 缺失 Key 时命令行询问
-- provider、Key、base_url 集中映射
-- 最终输出 Markdown 报告
+```powershell
+cd "C:\Users\lizhe\Documents\钢铁产业链周报\chain-report-cli-api"
+& "C:\Users\lizhe\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" -m chain_report.cli configure --provider openai-compatible --model "your-model-name" --base-url "https://your-endpoint/v1" --wind-node-bin "C:\Users\lizhe\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe"
+& "C:\Users\lizhe\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" -m chain_report.cli generate --non-interactive
+```
