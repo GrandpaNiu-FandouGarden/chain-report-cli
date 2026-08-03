@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import os
+import platform
 import sys
 from datetime import date
 from pathlib import Path
@@ -37,12 +38,41 @@ def ask_text(prompt: str, default: Optional[str] = None, required: bool = True) 
 def ask_secret(prompt: str, default_exists: bool = False, required: bool = True) -> str:
     hint = " [configured; press Enter to keep]" if default_exists else ""
     while True:
-        value = getpass.getpass(f"{prompt}{hint}: ").strip()
+        value = read_masked_secret(f"{prompt}{hint}: ").strip()
         if not value and default_exists:
             return ""
         if value or not required:
             return value
         print("Value is required.")
+
+
+def read_masked_secret(prompt: str) -> str:
+    if platform.system() != "Windows":
+        return getpass.getpass(prompt)
+    try:
+        import msvcrt
+    except ImportError:
+        return getpass.getpass(prompt)
+
+    print(prompt, end="", flush=True)
+    chars: list[str] = []
+    while True:
+        ch = msvcrt.getwch()
+        if ch in ("\r", "\n"):
+            print()
+            return "".join(chars)
+        if ch == "\003":
+            raise KeyboardInterrupt
+        if ch == "\b":
+            if chars:
+                chars.pop()
+                print("\b \b", end="", flush=True)
+            continue
+        if ch in ("\x00", "\xe0"):
+            msvcrt.getwch()
+            continue
+        chars.append(ch)
+        print("*", end="", flush=True)
 
 
 def ask_choice(prompt: str, choices: list[tuple[str, str]], default: Optional[str] = None) -> str:
