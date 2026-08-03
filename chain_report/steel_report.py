@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import html
 import math
+import shutil
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -721,6 +722,9 @@ def build_report_markdown(report_date: str, processed: Dict[str, Any], charts: D
 def generate_steel_weekly_report(report_date: str, wind: WindClient, output_dir: Path, date_range: Optional[str] = None) -> Path:
     report_dir = output_dir / "steel-weekly" / report_date
     report_dir.mkdir(parents=True, exist_ok=True)
+    charts_dir = report_dir / "charts"
+    if charts_dir.exists():
+        shutil.rmtree(charts_dir)
     raw = fetch_raw_series(wind, date_range=date_range)
     exchange_rate = fetch_exchange_rate(wind)
     processed = process_raw_data(raw, exchange_rate)
