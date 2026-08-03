@@ -4,4 +4,5 @@ __pycache__/
 outputs/
 *.env
 outputs*/
+.cache/
 .DS_Store
