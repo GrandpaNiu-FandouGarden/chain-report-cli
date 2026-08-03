@@ -89,6 +89,8 @@ def build_parser() -> argparse.ArgumentParser:
     gen.add_argument("--model", default=None)
     gen.add_argument("--base-url", default=None)
     gen.add_argument("--wind-key", default=None)
+    gen.add_argument("--wind-node-bin", default=None, help="Wind MCP 使用的 Node.js 可执行文件路径")
+    gen.add_argument("--wind-mcp-dir", default=None, help="Wind MCP skill 目录")
     gen.add_argument("--llm-key", default=None)
     gen.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     gen.add_argument("--sample-data", action="store_true", help="使用样例数据，不调用 Wind")
@@ -151,7 +153,13 @@ def run_generate(args: argparse.Namespace) -> int:
     if args.sample_data:
         wind_data = sample_steel_snapshot()
     else:
-        wind_client = WindClient(WindConfig(api_key=wind_key))
+        wind_client = WindClient(
+            WindConfig(
+                api_key=wind_key,
+                node_bin=args.wind_node_bin or WindConfig.node_bin,
+                mcp_dir=Path(args.wind_mcp_dir) if args.wind_mcp_dir else WindConfig.mcp_dir,
+            )
+        )
         wind_data = wind_client.fetch_steel_snapshot(args.date_range)
 
     print("[2/3] 调用模型生成报告...")
