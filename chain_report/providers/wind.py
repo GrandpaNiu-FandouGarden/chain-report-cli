@@ -48,7 +48,14 @@ class WindClient:
         return self.cli_path.exists()
 
     def query(self, question: str) -> Dict[str, Any]:
-        cache_key = question.strip()
+        return self.call_tool("analytics_data", "get_financial_data", {"question": question})
+
+    def call_tool(self, server_type: str, tool_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        cache_key = json.dumps(
+            {"server_type": server_type, "tool_name": tool_name, "params": params},
+            ensure_ascii=False,
+            sort_keys=True,
+        )
         if self.config.memory_cache and cache_key in self._memory_cache:
             return deepcopy(self._memory_cache[cache_key])
 
@@ -64,9 +71,9 @@ class WindClient:
             self.config.node_bin,
             str(self.cli_path),
             "call",
-            "analytics_data",
-            "get_financial_data",
-            json.dumps({"question": question}, ensure_ascii=False),
+            server_type,
+            tool_name,
+            json.dumps(params, ensure_ascii=False),
         ]
         env = os.environ.copy()
         if self.config.api_key:
@@ -83,7 +90,7 @@ class WindClient:
                 env=env,
             )
         except subprocess.TimeoutExpired as e:
-            raise WindError(f"Wind query timeout: {question}") from e
+            raise WindError(f"Wind query timeout: {tool_name}") from e
         if result.returncode != 0:
             raise WindError(result.stderr.strip() or result.stdout.strip() or "Wind CLI failed")
         parsed = self._parse_envelope(result.stdout)
@@ -92,14 +99,14 @@ class WindClient:
         self._write_disk_cache(cache_key, parsed)
         return parsed
 
-    def _cache_path(self, question: str) -> Optional[Path]:
+    def _cache_path(self, cache_key: str) -> Optional[Path]:
         if not self.config.cache_dir or self.config.cache_ttl_seconds <= 0:
             return None
-        digest = sha256(question.encode("utf-8")).hexdigest()
+        digest = sha256(cache_key.encode("utf-8")).hexdigest()
         return self.config.cache_dir / f"{digest}.json"
 
-    def _read_disk_cache(self, question: str) -> Optional[Dict[str, Any]]:
-        path = self._cache_path(question)
+    def _read_disk_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        path = self._cache_path(cache_key)
         if not path or not path.exists():
             return None
         try:
@@ -107,18 +114,18 @@ class WindClient:
             created_at = float(envelope.get("created_at", 0))
             if time.time() - created_at > self.config.cache_ttl_seconds:
                 return None
-            if envelope.get("question") != question:
+            if envelope.get("cache_key") != cache_key:
                 return None
             return envelope.get("data")
         except Exception:
             return None
 
-    def _write_disk_cache(self, question: str, data: Dict[str, Any]) -> None:
-        path = self._cache_path(question)
+    def _write_disk_cache(self, cache_key: str, data: Dict[str, Any]) -> None:
+        path = self._cache_path(cache_key)
         if not path:
             return
         path.parent.mkdir(parents=True, exist_ok=True)
-        envelope = {"question": question, "created_at": time.time(), "data": data}
+        envelope = {"cache_key": cache_key, "created_at": time.time(), "data": data}
         path.write_text(json.dumps(envelope, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _parse_envelope(self, stdout: str) -> Dict[str, Any]:
