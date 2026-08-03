@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List
 
-DEFAULT_WIND_MCP_DIR = Path.home() / ".agents" / "skills" / "wind-mcp-skill"
-DEFAULT_NODE = "/root/.nvm/versions/node/v22.22.1/bin/node"
+DEFAULT_WIND_MCP_DIR = Path(os.environ.get("CHAIN_REPORT_WIND_MCP_DIR", Path.home() / ".agents" / "skills" / "wind-mcp-skill"))
+DEFAULT_NODE = os.environ.get("CHAIN_REPORT_NODE_BIN") or shutil.which("node") or "node"
 
 
 @dataclass
@@ -56,6 +57,8 @@ class WindClient:
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self.config.timeout,
                 cwd=str(self.config.mcp_dir),
                 env=env,
