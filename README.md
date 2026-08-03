@@ -7,7 +7,8 @@
 - 独立 CLI 工具。
 - 不读取邮件。
 - 不替代现有每周五产业链周报定时任务。
-- 第一版输出本地 Markdown 文件。
+- 输出本地 Markdown 文件，并在同目录生成本地 SVG 图表。
+- 报告正文采用确定性数据处理和业务规则生成：多品种 Wind 取数、18 周周均、环比、连续涨跌、风险/机会信号、剪刀差和 Wind 资讯，不依赖大模型编造正文。
 
 ## 首次配置
 
@@ -54,13 +55,20 @@ python3 -m chain_report.cli configure --run-now
 python3 -m chain_report.cli run
 ```
 
+默认报告输出：
+
+```text
+outputs/steel-weekly/YYYY-MM-DD/report.md
+outputs/steel-weekly/YYYY-MM-DD/charts/*.svg
+```
+
 测试流程，不调用 Wind、不调用真实模型：
 
 ```bash
 python3 -m chain_report.cli generate --sample-data --provider mock --non-interactive --no-save-keys
 ```
 
-输出位置：
+测试输出位置：
 
 ```text
 outputs/steel-weekly/YYYY-MM-DD/report.md
@@ -120,6 +128,16 @@ python3 -m chain_report.cli generate \
 ```bash
 python3 -m chain_report.cli generate --non-interactive --no-wind-memory-cache
 ```
+
+## 当前报告口径
+
+本地版保留 OpenClaw 定时任务中影响报告质量的核心链路，但不做邮件读取和飞书发布：
+
+- 品种：螺纹钢、盘螺、线材、H型钢、钢坯、优质碳素钢、冷镦钢、铁矿石、焦炭、废钢、铁水、纯镍、锰硅、黑钨精矿65、钼铁、片钒、铬铁、动力煤。
+- 指标：螺纹钢社会库存、五大品种钢材社会库存、钢铁 PMI。
+- 计算：18 周周度均价、环比、连续上涨/下跌、风险信号、机会信号、原料成本与成材价格剪刀差。
+- 资讯：通过 Wind `financial_docs/get_financial_news` 获取近 14 天钢铁相关资讯；不读取邮箱。
+- 图表：生成本地 SVG 折线图，Markdown 以相对路径引用。
 
 ## Windows 示例
 
