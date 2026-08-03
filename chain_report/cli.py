@@ -175,7 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
     gen = sub.add_parser("generate", help="Generate a Markdown industry-chain research report")
     gen.add_argument("--report-type", default="steel-weekly", choices=["steel-weekly"])
     gen.add_argument("--date", default=None, help="Report date YYYY-MM-DD; default: today")
-    gen.add_argument("--date-range", default="最近三个月", help="Date range text passed to Wind queries")
+    gen.add_argument("--date-range", default=None, help="Date range text passed to Wind queries; default: last 18 weeks")
     add_shared_generate_args(gen)
     gen.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     gen.add_argument("--sample-data", action="store_true", help="Use sample data and skip Wind")
@@ -184,7 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="Generate a report using saved configuration")
     run.add_argument("--report-type", default="steel-weekly", choices=["steel-weekly"])
     run.add_argument("--date", default=None, help="Report date YYYY-MM-DD; default: today")
-    run.add_argument("--date-range", default="最近三个月", help="Date range text passed to Wind queries")
+    run.add_argument("--date-range", default=None, help="Date range text passed to Wind queries; default: last 18 weeks")
     add_shared_generate_args(run)
     run.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     run.add_argument("--sample-data", action="store_true", help="Use sample data and skip Wind")
@@ -258,7 +258,7 @@ def run_configure(args: argparse.Namespace) -> int:
         run_args = argparse.Namespace(
             report_type="steel-weekly",
             date=None,
-            date_range="最近三个月",
+            date_range=None,
             provider=None,
             model=None,
             base_url=None,
