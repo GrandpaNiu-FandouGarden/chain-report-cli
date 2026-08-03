@@ -79,7 +79,7 @@ def parse_date(value: str) -> Optional[datetime]:
     return None
 
 
-def parse_wind_points(result: Dict[str, Any]) -> List[Tuple[str, float]]:
+def parse_wind_points(result: Dict[str, Any], sum_numeric_columns: bool = False) -> List[Tuple[str, float]]:
     tables = result.get("tables") or []
     if not tables:
         return []
@@ -87,31 +87,45 @@ def parse_wind_points(result: Dict[str, Any]) -> List[Tuple[str, float]]:
     columns = table.get("columns") or []
     rows = table.get("rows") or []
     date_idx = None
-    numeric_candidates = []
+    best_value_idx = None
+    fallback_value_idx = None
     for idx, col in enumerate(columns):
         name = col.get("name", "")
         if col.get("type") == "date" or "日期" in name:
             date_idx = idx
         if col.get("type") == "number":
-            score = 0
-            if any(k in name for k in ["平均价", "价格", "收盘", "指数", "现货", "市场价", "平仓价", "库存", "PMI"]):
-                score += 10
             non_null = sum(1 for row in rows if len(row) > idx and row[idx] is not None)
-            if non_null:
-                numeric_candidates.append((score, non_null, idx))
-    if date_idx is None or not numeric_candidates:
+            if not non_null:
+                continue
+            if any(k in name for k in ["平均价", "价格", "收盘", "指数", "现货", "市场价", "平仓价"]):
+                best_value_idx = idx
+                break
+            if fallback_value_idx is None:
+                fallback_value_idx = idx
+    value_idx = best_value_idx if best_value_idx is not None else fallback_value_idx
+    if date_idx is None or value_idx is None:
         return []
-    value_idx = sorted(numeric_candidates, reverse=True)[0][2]
     points: List[Tuple[str, float]] = []
     for row in rows:
-        if len(row) <= max(date_idx, value_idx):
+        if len(row) <= date_idx:
             continue
         dt = parse_date(str(row[date_idx]))
-        raw_value = row[value_idx]
-        if not dt or raw_value is None:
+        if not dt:
             continue
         try:
-            points.append((dt.strftime("%Y-%m-%d"), float(raw_value)))
+            if sum_numeric_columns:
+                numeric_indexes = [
+                    idx
+                    for idx, col in enumerate(columns)
+                    if col.get("type") == "number" and any(len(r) > idx and r[idx] is not None for r in rows)
+                ]
+                values = [float(row[idx]) for idx in numeric_indexes if len(row) > idx and row[idx] is not None]
+                if values:
+                    points.append((dt.strftime("%Y-%m-%d"), sum(values)))
+            else:
+                raw_value = row[value_idx]
+                if raw_value is not None:
+                    points.append((dt.strftime("%Y-%m-%d"), float(raw_value)))
         except (TypeError, ValueError):
             continue
     return points
