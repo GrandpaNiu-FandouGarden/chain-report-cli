@@ -40,12 +40,18 @@ python3 -m chain_report.cli configure \
 python3 -m chain_report.cli config-show
 ```
 
+配置完成后，CLI 会询问是否立即生成报告。也可以显式指定：
+
+```bash
+python3 -m chain_report.cli configure --run-now
+```
+
 ## 运行
 
 配置完成后，直接生成报告：
 
 ```bash
-python3 -m chain_report.cli generate --non-interactive
+python3 -m chain_report.cli run
 ```
 
 测试流程，不调用 Wind、不调用真实模型：
@@ -120,5 +126,5 @@ python3 -m chain_report.cli generate --non-interactive --no-wind-memory-cache
 ```powershell
 cd "C:\Users\lizhe\Documents\钢铁产业链周报\chain-report-cli-api"
 & "C:\Users\lizhe\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" -m chain_report.cli configure --provider openai-compatible --model "your-model-name" --base-url "https://your-endpoint/v1" --wind-node-bin "C:\Users\lizhe\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe"
-& "C:\Users\lizhe\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" -m chain_report.cli generate --non-interactive --wind-cache-dir ".cache\wind" --wind-cache-ttl-seconds 3600
+.\run-report.ps1
 ```
