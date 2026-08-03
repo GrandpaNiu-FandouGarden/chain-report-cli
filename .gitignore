@@ -5,4 +5,5 @@ outputs/
 *.env
 outputs*/
 .cache/
+openclaw-reference/
 .DS_Store
