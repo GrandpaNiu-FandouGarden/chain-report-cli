@@ -92,6 +92,19 @@ def ask_choice(prompt: str, choices: list[tuple[str, str]], default: Optional[st
         print("Invalid choice. Enter a number or option name.")
 
 
+def ask_yes_no(prompt: str, default: bool = True) -> bool:
+    suffix = " [Y/n]" if default else " [y/N]"
+    while True:
+        raw = input(f"{prompt}{suffix}: ").strip().lower()
+        if not raw:
+            return default
+        if raw in ("y", "yes"):
+            return True
+        if raw in ("n", "no"):
+            return False
+        print("Enter y or n.")
+
+
 def mask_secret(value: Optional[str]) -> str:
     if not value:
         return "(not set)"
@@ -167,9 +180,19 @@ def build_parser() -> argparse.ArgumentParser:
     gen.add_argument("--sample-data", action="store_true", help="Use sample data and skip Wind")
     gen.add_argument("--non-interactive", action="store_true", help="Non-interactive mode for scheduled jobs")
 
+    run = sub.add_parser("run", help="Generate a report using saved configuration")
+    run.add_argument("--report-type", default="steel-weekly", choices=["steel-weekly"])
+    run.add_argument("--date", default=None, help="Report date YYYY-MM-DD; default: today")
+    run.add_argument("--date-range", default="最近三个月", help="Date range text passed to Wind queries")
+    add_shared_generate_args(run)
+    run.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
+    run.add_argument("--sample-data", action="store_true", help="Use sample data and skip Wind")
+
     cfg = sub.add_parser("configure", help="Save Wind and model configuration to .env")
     add_shared_generate_args(cfg)
     cfg.add_argument("--non-interactive", action="store_true", help="Fail instead of prompting for missing values")
+    cfg.add_argument("--run-now", action="store_true", help="Generate a report immediately after saving configuration")
+    cfg.add_argument("--no-run-prompt", action="store_true", help="Do not ask whether to generate a report after interactive configuration")
 
     sub.add_parser("config-show", help="Show current configuration with secrets masked")
     return parser
@@ -227,6 +250,30 @@ def run_configure(args: argparse.Namespace) -> int:
         resolve_key(key_env, "model API Key", args.llm_key, save=save, interactive=interactive, required=key_required)
 
     print(f"Configuration saved to {ENV_PATH}" if save else "Configuration loaded into current process only.")
+    should_run = args.run_now
+    if interactive and not args.no_run_prompt:
+        should_run = ask_yes_no("Generate report now?", default=True)
+    if should_run:
+        run_args = argparse.Namespace(
+            report_type="steel-weekly",
+            date=None,
+            date_range="最近三个月",
+            provider=None,
+            model=None,
+            base_url=None,
+            wind_key=None,
+            wind_node_bin=None,
+            wind_mcp_dir=None,
+            wind_cache_dir=None,
+            wind_cache_ttl_seconds=None,
+            no_wind_memory_cache=False,
+            llm_key=None,
+            no_save_keys=True,
+            output_dir=str(DEFAULT_OUTPUT_DIR),
+            sample_data=False,
+            non_interactive=True,
+        )
+        return run_generate(run_args)
     return 0
 
 
@@ -334,6 +381,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.command in (None, "generate"):
         if args.command is None:
             args = parser.parse_args(["generate", *(argv or [])])
+        return run_generate(args)
+    if args.command == "run":
+        args.non_interactive = True
         return run_generate(args)
     if args.command == "configure":
         return run_configure(args)
