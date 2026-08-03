@@ -180,6 +180,7 @@ def build_parser() -> argparse.ArgumentParser:
     gen.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     gen.add_argument("--sample-data", action="store_true", help="Use sample data and skip Wind")
     gen.add_argument("--non-interactive", action="store_true", help="Non-interactive mode for scheduled jobs")
+    gen.add_argument("--no-model-polish", action="store_true", help="Skip final model polishing for deterministic reports")
 
     run = sub.add_parser("run", help="Generate a report using saved configuration")
     run.add_argument("--report-type", default="steel-weekly", choices=["steel-weekly"])
@@ -189,6 +190,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     run.add_argument("--sample-data", action="store_true", help="Use sample data and skip Wind")
     run.add_argument("--non-interactive", action="store_true", help="Do not ask model/key confirmation before running")
+    run.add_argument("--no-model-polish", action="store_true", help="Skip final model polishing for deterministic reports")
 
     cfg = sub.add_parser("configure", help="Save Wind and model configuration to .env")
     add_shared_generate_args(cfg)
@@ -274,6 +276,7 @@ def run_configure(args: argparse.Namespace) -> int:
             output_dir=str(DEFAULT_OUTPUT_DIR),
             sample_data=False,
             non_interactive=True,
+            no_model_polish=False,
         )
         return run_generate(run_args)
     return 0
@@ -328,6 +331,16 @@ def run_generate(args: argparse.Namespace) -> int:
         model = ask_text("Step 4: confirm model name", model)
         if provider == "openai-compatible":
             base_url = ask_text("Step 5: OpenAI-compatible base_url", base_url, required=True)
+        if provider != "mock" and not args.sample_data and not args.no_model_polish:
+            args.no_model_polish = not ask_yes_no("Use this model to polish the final report?", default=True)
+        configured_cache_dir = args.wind_cache_dir or os.environ.get(WIND_CACHE_DIR_ENV)
+        configured_cache_ttl = args.wind_cache_ttl_seconds
+        if configured_cache_ttl is None:
+            configured_cache_ttl = int(os.environ.get(WIND_CACHE_TTL_ENV, "0") or "0")
+        if not args.sample_data and configured_cache_dir and configured_cache_ttl > 0:
+            use_cache = ask_yes_no(f"Use cached Wind data if available ({configured_cache_dir}, TTL {configured_cache_ttl}s)?", default=True)
+            if not use_cache:
+                args.wind_cache_ttl_seconds = 0
         if not args.sample_data:
             wind_key = resolve_key("WIND_API_KEY", "Wind API Key", args.wind_key, save=save_keys, interactive=True, required=True)
         else:
@@ -360,6 +373,10 @@ def run_generate(args: argparse.Namespace) -> int:
         wind_cache_ttl = args.wind_cache_ttl_seconds
         if wind_cache_ttl is None:
             wind_cache_ttl = int(os.environ.get(WIND_CACHE_TTL_ENV, "0") or "0")
+        if wind_cache_dir and wind_cache_ttl > 0:
+            print(f"Wind disk cache enabled: {wind_cache_dir} (TTL {wind_cache_ttl}s)")
+        else:
+            print("Wind disk cache disabled for this run.")
         wind_client = WindClient(
             WindConfig(
                 api_key=wind_key,
@@ -372,9 +389,39 @@ def run_generate(args: argparse.Namespace) -> int:
         )
         print("[2/3] Calculating indicators and rendering charts...")
         output_path = generate_steel_weekly_report(report_date, wind_client, Path(args.output_dir), date_range=args.date_range)
+        if provider != "mock" and not args.no_model_polish:
+            print("[3/4] Polishing report with configured model...")
+            llm = LLMClient(LLMConfig(provider=provider, model=model, api_key=llm_key, base_url=base_url))
+            polish_report(output_path, llm)
+            print(f"[4/4] Markdown generated: {output_path}")
+            return 0
 
     print(f"[3/3] Markdown generated: {output_path}")
     return 0
+
+
+def polish_report(path: Path, llm: LLMClient) -> None:
+    original = path.read_text(encoding="utf-8")
+    backup = path.with_name("report.deterministic.md")
+    backup.write_text(original, encoding="utf-8")
+    prompt = f"""你是产业链周报的中文编辑。请在不改变事实和结构的前提下润色下面的 Markdown 报告。
+
+硬性规则：
+1. 必须保留所有 Markdown 标题层级、表格、图片引用、原文链接和免责声明。
+2. 不得改动任何数字、日期、单位、百分比、品种名称、图表路径。
+3. 不得新增未在原文出现的数据、判断或来源。
+4. 可以优化句子衔接、减少重复、让业务建议更像正式研究报告。
+5. 只输出润色后的完整 Markdown，不要解释。
+
+原始 Markdown：
+```markdown
+{original}
+```
+"""
+    polished = llm.generate(prompt).strip()
+    if not polished.startswith("#"):
+        raise RuntimeError("Model polishing did not return a Markdown report; deterministic report kept.")
+    path.write_text(polished + "\n", encoding="utf-8")
 
 
 def main(argv: Optional[list[str]] = None) -> int:
