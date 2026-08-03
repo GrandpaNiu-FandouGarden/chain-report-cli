@@ -14,6 +14,7 @@ from chain_report.config import DEFAULT_OUTPUT_DIR, ENV_PATH, PROVIDER_SPECS, lo
 from chain_report.generator import generate_report
 from chain_report.providers.llm import LLMClient, LLMConfig
 from chain_report.providers.wind import WindClient, WindConfig, sample_steel_snapshot
+from chain_report.steel_report import generate_steel_weekly_report
 
 DEFAULT_PROVIDER_ENV = "CHAIN_REPORT_PROVIDER"
 DEFAULT_MODEL_ENV = "CHAIN_REPORT_MODEL"
@@ -348,6 +349,9 @@ def run_generate(args: argparse.Namespace) -> int:
     print("\n[1/3] Fetching Wind data...")
     if args.sample_data:
         wind_data = sample_steel_snapshot()
+        print("[2/3] Calling model...")
+        llm = LLMClient(LLMConfig(provider=provider, model=model, api_key=llm_key, base_url=base_url))
+        output_path = generate_report(report_type, report_date, wind_data, llm, Path(args.output_dir))
     else:
         wind_node_bin = args.wind_node_bin or os.environ.get(WIND_NODE_BIN_ENV) or WindConfig.node_bin
         wind_mcp_dir = args.wind_mcp_dir or os.environ.get(WIND_MCP_DIR_ENV)
@@ -365,11 +369,8 @@ def run_generate(args: argparse.Namespace) -> int:
                 cache_ttl_seconds=wind_cache_ttl,
             )
         )
-        wind_data = wind_client.fetch_steel_snapshot(args.date_range)
-
-    print("[2/3] Calling model...")
-    llm = LLMClient(LLMConfig(provider=provider, model=model, api_key=llm_key, base_url=base_url))
-    output_path = generate_report(report_type, report_date, wind_data, llm, Path(args.output_dir))
+        print("[2/3] Calculating indicators and rendering charts...")
+        output_path = generate_steel_weekly_report(report_date, wind_client, Path(args.output_dir), date_range=args.date_range)
 
     print(f"[3/3] Markdown generated: {output_path}")
     return 0
