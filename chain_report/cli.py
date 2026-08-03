@@ -188,6 +188,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_shared_generate_args(run)
     run.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     run.add_argument("--sample-data", action="store_true", help="Use sample data and skip Wind")
+    run.add_argument("--non-interactive", action="store_true", help="Do not ask model/key confirmation before running")
 
     cfg = sub.add_parser("configure", help="Save Wind and model configuration to .env")
     add_shared_generate_args(cfg)
@@ -316,21 +317,21 @@ def run_generate(args: argparse.Namespace) -> int:
     wind_key = None
     if interactive:
         print("\nChainReport CLI - industry-chain report generator\n")
-        if not args.sample_data:
-            wind_key = resolve_key("WIND_API_KEY", "Wind API Key", args.wind_key, save=save_keys, interactive=True, required=True)
-        else:
-            print("Step 1: using sample data; skipping Wind API Key.")
-        report_type = ask_choice("Step 2: choose report type", [("steel-weekly", "Steel industry-chain weekly report")], report_type)
-        report_date = ask_text("Step 3: report date YYYY-MM-DD", report_date)
+        report_type = ask_choice("Step 1: choose report type", [("steel-weekly", "Steel industry-chain weekly report")], report_type)
+        report_date = ask_text("Step 2: report date YYYY-MM-DD", report_date)
         provider = args.provider or ask_choice(
-            "Step 4: choose model provider",
+            "Step 3: confirm model provider for this run",
             [(key, item["display"]) for key, item in PROVIDER_SPECS.items()],
             provider,
         )
         spec = PROVIDER_SPECS[provider]
-        model = ask_text("Step 5: model name", model)
+        model = ask_text("Step 4: confirm model name", model)
         if provider == "openai-compatible":
-            base_url = ask_text("Step 6: OpenAI-compatible base_url", base_url, required=True)
+            base_url = ask_text("Step 5: OpenAI-compatible base_url", base_url, required=True)
+        if not args.sample_data:
+            wind_key = resolve_key("WIND_API_KEY", "Wind API Key", args.wind_key, save=save_keys, interactive=True, required=True)
+        else:
+            print("Using sample data; skipping Wind API Key.")
     elif not args.sample_data:
         wind_key = resolve_key("WIND_API_KEY", "Wind API Key", args.wind_key, save=save_keys, interactive=False, required=False)
         if not wind_key:
@@ -384,7 +385,6 @@ def main(argv: Optional[list[str]] = None) -> int:
             args = parser.parse_args(["generate", *(argv or [])])
         return run_generate(args)
     if args.command == "run":
-        args.non_interactive = True
         return run_generate(args)
     if args.command == "configure":
         return run_configure(args)
