@@ -19,6 +19,8 @@ DEFAULT_MODEL_ENV = "CHAIN_REPORT_MODEL"
 DEFAULT_BASE_URL_ENV = "CHAIN_REPORT_BASE_URL"
 WIND_NODE_BIN_ENV = "CHAIN_REPORT_NODE_BIN"
 WIND_MCP_DIR_ENV = "CHAIN_REPORT_WIND_MCP_DIR"
+WIND_CACHE_DIR_ENV = "CHAIN_REPORT_WIND_CACHE_DIR"
+WIND_CACHE_TTL_ENV = "CHAIN_REPORT_WIND_CACHE_TTL_SECONDS"
 
 
 def ask_text(prompt: str, default: Optional[str] = None, required: bool = True) -> str:
@@ -115,6 +117,9 @@ def add_shared_generate_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--wind-key", default=None)
     parser.add_argument("--wind-node-bin", default=None, help="Node.js executable used by Wind MCP")
     parser.add_argument("--wind-mcp-dir", default=None, help="Wind MCP skill directory")
+    parser.add_argument("--wind-cache-dir", default=None, help="Optional Wind query disk cache directory")
+    parser.add_argument("--wind-cache-ttl-seconds", type=int, default=None, help="Wind disk cache TTL in seconds; 0 disables disk cache")
+    parser.add_argument("--no-wind-memory-cache", action="store_true", help="Disable per-run in-memory Wind query cache")
     parser.add_argument("--llm-key", default=None)
     parser.add_argument("--no-save-keys", action="store_true", help="Do not save entered keys to .env")
 
@@ -178,6 +183,10 @@ def run_configure(args: argparse.Namespace) -> int:
             set_env_value(WIND_NODE_BIN_ENV, args.wind_node_bin)
         if args.wind_mcp_dir:
             set_env_value(WIND_MCP_DIR_ENV, args.wind_mcp_dir)
+        if args.wind_cache_dir:
+            set_env_value(WIND_CACHE_DIR_ENV, args.wind_cache_dir)
+        if args.wind_cache_ttl_seconds is not None:
+            set_env_value(WIND_CACHE_TTL_ENV, str(args.wind_cache_ttl_seconds))
 
     wind_key_required = bool(args.wind_key) or interactive
     resolve_key("WIND_API_KEY", "Wind API Key", args.wind_key, save=save, interactive=interactive, required=wind_key_required)
@@ -203,6 +212,8 @@ def run_config_show(_: argparse.Namespace) -> int:
         "WIND_API_KEY": mask_secret(os.environ.get("WIND_API_KEY")),
         WIND_NODE_BIN_ENV: os.environ.get(WIND_NODE_BIN_ENV),
         WIND_MCP_DIR_ENV: os.environ.get(WIND_MCP_DIR_ENV),
+        WIND_CACHE_DIR_ENV: os.environ.get(WIND_CACHE_DIR_ENV),
+        WIND_CACHE_TTL_ENV: os.environ.get(WIND_CACHE_TTL_ENV),
     }
     if key_env:
         values[key_env] = mask_secret(os.environ.get(key_env))
@@ -263,11 +274,18 @@ def run_generate(args: argparse.Namespace) -> int:
     else:
         wind_node_bin = args.wind_node_bin or os.environ.get(WIND_NODE_BIN_ENV) or WindConfig.node_bin
         wind_mcp_dir = args.wind_mcp_dir or os.environ.get(WIND_MCP_DIR_ENV)
+        wind_cache_dir = args.wind_cache_dir or os.environ.get(WIND_CACHE_DIR_ENV)
+        wind_cache_ttl = args.wind_cache_ttl_seconds
+        if wind_cache_ttl is None:
+            wind_cache_ttl = int(os.environ.get(WIND_CACHE_TTL_ENV, "0") or "0")
         wind_client = WindClient(
             WindConfig(
                 api_key=wind_key,
                 node_bin=wind_node_bin,
                 mcp_dir=Path(wind_mcp_dir) if wind_mcp_dir else WindConfig.mcp_dir,
+                memory_cache=not args.no_wind_memory_cache,
+                cache_dir=Path(wind_cache_dir) if wind_cache_dir else None,
+                cache_ttl_seconds=wind_cache_ttl,
             )
         )
         wind_data = wind_client.fetch_steel_snapshot(args.date_range)
