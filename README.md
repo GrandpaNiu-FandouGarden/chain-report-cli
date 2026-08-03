@@ -27,6 +27,8 @@ python3 -m chain_report.cli configure \
   --wind-key YOUR_WIND_KEY \
   --llm-key YOUR_MODEL_KEY \
   --wind-node-bin /path/to/node \
+  --wind-cache-dir .cache/wind \
+  --wind-cache-ttl-seconds 3600 \
   --non-interactive
 ```
 
@@ -67,6 +69,8 @@ CLI 会优先读取当前目录 `.env` 或环境变量：
 - `CHAIN_REPORT_BASE_URL`
 - `CHAIN_REPORT_NODE_BIN`
 - `CHAIN_REPORT_WIND_MCP_DIR`
+- `CHAIN_REPORT_WIND_CACHE_DIR`
+- `CHAIN_REPORT_WIND_CACHE_TTL_SECONDS`
 - `WIND_API_KEY`
 - `OPENAI_API_KEY`
 - `DEEPSEEK_API_KEY`
@@ -90,10 +94,31 @@ python3 -m chain_report.cli generate --no-save-keys
 - `openai-compatible`
 - `ollama`
 
+## Wind 数据缓存
+
+CLI 默认启用单次运行内存缓存：同一次报告生成过程中，相同的 Wind query 只会调用一次 Wind MCP。
+
+如需跨进程/跨运行复用 Wind 数据，可显式开启磁盘缓存：
+
+```bash
+python3 -m chain_report.cli generate \
+  --non-interactive \
+  --wind-cache-dir .cache/wind \
+  --wind-cache-ttl-seconds 3600
+```
+
+注意：磁盘缓存默认不开启，避免“最新/最近三个月”这类查询误用过期数据。`--wind-cache-ttl-seconds 0` 表示关闭磁盘缓存。
+
+如需关闭单次运行内存缓存：
+
+```bash
+python3 -m chain_report.cli generate --non-interactive --no-wind-memory-cache
+```
+
 ## Windows 示例
 
 ```powershell
 cd "C:\Users\lizhe\Documents\钢铁产业链周报\chain-report-cli-api"
 & "C:\Users\lizhe\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" -m chain_report.cli configure --provider openai-compatible --model "your-model-name" --base-url "https://your-endpoint/v1" --wind-node-bin "C:\Users\lizhe\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe"
-& "C:\Users\lizhe\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" -m chain_report.cli generate --non-interactive
+& "C:\Users\lizhe\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" -m chain_report.cli generate --non-interactive --wind-cache-dir ".cache\wind" --wind-cache-ttl-seconds 3600
 ```
