@@ -5,12 +5,17 @@ import json
 import os
 import shutil
 import subprocess
+import time
+from copy import deepcopy
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 DEFAULT_WIND_MCP_DIR = Path(os.environ.get("CHAIN_REPORT_WIND_MCP_DIR", Path.home() / ".agents" / "skills" / "wind-mcp-skill"))
 DEFAULT_NODE = os.environ.get("CHAIN_REPORT_NODE_BIN") or shutil.which("node") or "node"
+DEFAULT_WIND_CACHE_DIR = os.environ.get("CHAIN_REPORT_WIND_CACHE_DIR")
+DEFAULT_WIND_CACHE_TTL_SECONDS = int(os.environ.get("CHAIN_REPORT_WIND_CACHE_TTL_SECONDS", "0") or "0")
 
 
 @dataclass
@@ -19,6 +24,9 @@ class WindConfig:
     mcp_dir: Path = DEFAULT_WIND_MCP_DIR
     node_bin: str = DEFAULT_NODE
     timeout: int = 120
+    memory_cache: bool = True
+    cache_dir: Optional[Path] = Path(DEFAULT_WIND_CACHE_DIR) if DEFAULT_WIND_CACHE_DIR else None
+    cache_ttl_seconds: int = DEFAULT_WIND_CACHE_TTL_SECONDS
 
 
 class WindError(RuntimeError):
@@ -28,6 +36,7 @@ class WindError(RuntimeError):
 class WindClient:
     def __init__(self, config: WindConfig):
         self.config = config
+        self._memory_cache: Dict[str, Dict[str, Any]] = {}
         if config.api_key:
             os.environ["WIND_API_KEY"] = config.api_key
 
@@ -39,6 +48,16 @@ class WindClient:
         return self.cli_path.exists()
 
     def query(self, question: str) -> Dict[str, Any]:
+        cache_key = question.strip()
+        if self.config.memory_cache and cache_key in self._memory_cache:
+            return deepcopy(self._memory_cache[cache_key])
+
+        disk_cached = self._read_disk_cache(cache_key)
+        if disk_cached is not None:
+            if self.config.memory_cache:
+                self._memory_cache[cache_key] = deepcopy(disk_cached)
+            return disk_cached
+
         if not self.available():
             raise WindError(f"Wind MCP CLI not found: {self.cli_path}")
         cmd = [
@@ -67,7 +86,40 @@ class WindClient:
             raise WindError(f"Wind query timeout: {question}") from e
         if result.returncode != 0:
             raise WindError(result.stderr.strip() or result.stdout.strip() or "Wind CLI failed")
-        return self._parse_envelope(result.stdout)
+        parsed = self._parse_envelope(result.stdout)
+        if self.config.memory_cache:
+            self._memory_cache[cache_key] = deepcopy(parsed)
+        self._write_disk_cache(cache_key, parsed)
+        return parsed
+
+    def _cache_path(self, question: str) -> Optional[Path]:
+        if not self.config.cache_dir or self.config.cache_ttl_seconds <= 0:
+            return None
+        digest = sha256(question.encode("utf-8")).hexdigest()
+        return self.config.cache_dir / f"{digest}.json"
+
+    def _read_disk_cache(self, question: str) -> Optional[Dict[str, Any]]:
+        path = self._cache_path(question)
+        if not path or not path.exists():
+            return None
+        try:
+            envelope = json.loads(path.read_text(encoding="utf-8"))
+            created_at = float(envelope.get("created_at", 0))
+            if time.time() - created_at > self.config.cache_ttl_seconds:
+                return None
+            if envelope.get("question") != question:
+                return None
+            return envelope.get("data")
+        except Exception:
+            return None
+
+    def _write_disk_cache(self, question: str, data: Dict[str, Any]) -> None:
+        path = self._cache_path(question)
+        if not path:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        envelope = {"question": question, "created_at": time.time(), "data": data}
+        path.write_text(json.dumps(envelope, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _parse_envelope(self, stdout: str) -> Dict[str, Any]:
         outer = json.loads(stdout.strip())
