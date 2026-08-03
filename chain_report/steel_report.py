@@ -402,6 +402,17 @@ def direction_text(direction: str) -> str:
     return {"up": "上行", "down": "回落", "flat": "持平"}.get(direction, "-")
 
 
+def position_text(latest: float, low: float, high: float) -> str:
+    if math.isclose(low, high):
+        return "中位"
+    ratio = (latest - low) / (high - low)
+    if ratio <= 0.33:
+        return "低位"
+    if ratio >= 0.67:
+        return "高位"
+    return "中位"
+
+
 def build_price_table(commodities: Dict[str, Any]) -> str:
     lines = ["| 品种 | 最新周均价 | 环比变动 | 方向 |", "|---|---:|---:|---|"]
     for name in COMMODITIES:
@@ -440,18 +451,24 @@ def trend_sentence(name: str, item: Dict[str, Any]) -> str:
     base = f"{name}本周周均价为{latest:,.2f}{unit}"
     if wow_pct is not None:
         base += f"，环比{wow_pct:+.1f}%（{wow_abs:+,.2f}{unit}）"
+    weekly = item.get("weekly_data", {}) or {}
+    range_sentence = ""
+    if len(weekly) >= 3:
+        values = list(weekly.values())
+        low, high = min(values), max(values)
+        range_sentence = f"，最新价格处于近{len(values)}周区间的{position_text(latest, low, high)}"
     down_weeks = item.get("down_weeks") or 0
     up_weeks = item.get("up_weeks") or 0
     if down_weeks >= 3:
-        base += f"。该品种已连续{down_weeks}周回落，需重点观察库存跌价和订单回款压力。"
+        base += f"。该品种已连续{down_weeks}周回落{range_sentence}，需重点观察库存跌价和订单回款压力。"
     elif up_weeks >= 3:
-        base += f"。该品种已连续{up_weeks}周上行，短期资金占用和补库需求可能同步抬升。"
+        base += f"。该品种已连续{up_weeks}周上行{range_sentence}，短期资金占用和补库需求可能同步抬升。"
     elif item.get("direction") == "down":
-        base += "。本周价格回落，但尚未形成明显连续趋势。"
+        base += f"。本周价格回落，但尚未形成明显连续趋势{range_sentence}。"
     elif item.get("direction") == "up":
-        base += "。本周价格回升，需结合订单真实性和销售回款判断融资合理性。"
+        base += f"。本周价格回升{range_sentence}，需结合订单真实性和销售回款判断融资合理性。"
     else:
-        base += "。本周价格波动较小，短期更多体现震荡特征。"
+        base += f"。本周价格波动较小{range_sentence}，短期更多体现震荡特征。"
     return base
 
 
@@ -693,6 +710,15 @@ def generate_steel_weekly_report(report_date: str, wind: WindClient, output_dir:
     raw = fetch_raw_series(wind, date_range=date_range)
     exchange_rate = fetch_exchange_rate(wind)
     processed = process_raw_data(raw, exchange_rate)
+    valid_count = sum(1 for name in COMMODITIES if processed["commodities"].get(name, {}).get("latest_value") is not None)
+    if valid_count < max(8, len(COMMODITIES) // 2):
+        sample_errors = [
+            f"{name}: {series.error[:180]}"
+            for name, series in raw.items()
+            if name in COMMODITIES and series.error
+        ][:3]
+        detail = "；".join(sample_errors) if sample_errors else "Wind returned too few usable data series"
+        raise RuntimeError(f"Wind data quality gate failed: {valid_count}/{len(COMMODITIES)} commodity series valid. {detail}")
     charts = generate_charts(processed, report_dir)
     news_data = fetch_wind_news(wind)
     report = build_report_markdown(report_date, processed, charts, news_data)
